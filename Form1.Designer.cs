@@ -4,7 +4,7 @@ using NetMQ;
 using System.Windows.Forms;
 using OpenCvSharp;
 using Newtonsoft.Json;
-
+using System;
 
 namespace cnn_zmq_dotnet_client
 {
@@ -59,10 +59,13 @@ namespace cnn_zmq_dotnet_client
                 Thread request = new Thread(new ThreadStart(()=>{
                     try{
                         
+                        ServiceTask kill_task = new ServiceTask();
+                        kill_task.command = "kill";
+                        var json_str = image_json_converter.serialaze(kill_task);
                         string message;
 
 
-                        if (client.TrySendFrame(System.TimeSpan.FromSeconds(2), "kill") && 
+                        if (client.TrySendFrame(System.TimeSpan.FromSeconds(2), json_str) && 
                             client.TryReceiveFrameString(System.TimeSpan.FromSeconds(2), out message))
                         {
                             System.Console.WriteLine("server resp: {0}", message);
@@ -89,28 +92,41 @@ namespace cnn_zmq_dotnet_client
             
                         
                     Mat img = Cv2.ImRead("../cnn_zmq_service/test.jpg");
-                    string str_from_image = image_json_converter.ndarray2base64(img);
-                    Mat img_form_string = image_json_converter.base642ndarray(str_from_image);
 
-                    pic.Invoke((MethodInvoker)(()=>{
-                        pic.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(img_form_string);
-                        }));
+                    CNNTask task = new CNNTask();
+                    task.a = 10;
+                    task.b = 11;
+                    task.image = img;
+
                     
-                    test_class task1 = new test_class();
-                    task1.a = 12;
-                    string j_str = "empty string";
-                    j_str = JsonConvert.SerializeObject(task1);
-                    System.Console.WriteLine("serialazed task1: {0}", j_str);
-                    var j_obj = JsonConvert.DeserializeObject<test_class>(j_str);
-                    System.Console.WriteLine("j_obj: a = {0}", j_obj.a);
+                    var json_str = image_json_converter.serialaze(task);
 
+                    var json_obj = image_json_converter.deserialaze(json_str);
+                    if (Object.ReferenceEquals(json_obj.GetType(), typeof(CNNTask)))
+                    {
+                        CNNTask cnn_tast = json_obj as CNNTask;
 
-
+                        pic.Invoke((MethodInvoker)(()=>{
+                            pic.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(cnn_tast.image);
+                        }));
+                        
+                    }
+                    
                     string message;
-                    if (client.TrySendFrame(System.TimeSpan.FromSeconds(2), "j_str") && 
+                    if (client.TrySendFrame(System.TimeSpan.FromSeconds(2), json_str) && 
                         client.TryReceiveFrameString(System.TimeSpan.FromSeconds(2), out message))
                     {
-                        System.Console.WriteLine("server resp: {0}", message);
+                        var recv_json_obj = image_json_converter.deserialaze(message);
+                        if (Object.ReferenceEquals(recv_json_obj.GetType(), typeof(CNNAnswer)))
+                        {
+                            CNNAnswer cnn_answer = recv_json_obj as CNNAnswer;
+
+                            System.Console.WriteLine("res: {0}", cnn_answer.res);
+                            pic.Invoke((MethodInvoker)(()=>{
+                                pic.Image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(cnn_answer.image);
+                            }));
+                            
+                        }
                     }else{
                         System.Console.WriteLine("server is down");
                         client.Disconnect("tcp://localhost:5555");
